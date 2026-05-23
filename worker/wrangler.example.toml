@@ -1,0 +1,21 @@
+name = "cfp-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare D1
+[[d1_databases]]
+binding = "DB"
+database_name = "cfp_db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Secrets / vars (use `wrangler secret put` for production)
+[vars]
+# CORS allowlist - comma separated origins, or "*" for any
+ALLOWED_ORIGINS = "http://localhost:3000"
+# Override default admin bootstrap (used by seed.sql only on first run)
+
+# IMPORTANT: use `wrangler secret put JWT_SECRET` for production.
+# For local dev create .dev.vars in this folder with:
+# JWT_SECRET = "change-me-to-a-long-random-string"

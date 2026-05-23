@@ -1,0 +1,23 @@
+{
+  "name": "cf-domain-panel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Domain Management Panel - Multi account, multi user, permission-based SaaS dashboard",
+  "workspaces": [
+    "worker",
+    "web",
+    "shared"
+  ],
+  "scripts": {
+    "dev:worker": "npm --workspace worker run dev",
+    "dev:web": "npm --workspace web run dev",
+    "deploy:worker": "npm --workspace worker run deploy",
+    "build:web": "npm --workspace web run build",
+    "db:migrate:local": "npm --workspace worker run db:migrate:local",
+    "db:migrate:remote": "npm --workspace worker run db:migrate:remote",
+    "db:seed:local": "npm --workspace worker run db:seed:local"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
