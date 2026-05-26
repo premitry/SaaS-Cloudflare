@@ -57,6 +57,13 @@ export class ApiError extends Error {
   }
 }
 
+export class NetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NetworkError";
+  }
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {}
@@ -65,7 +72,19 @@ async function request<T>(
   headers.set("Content-Type", "application/json");
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  } catch (e) {
+    // network / CORS / DNS error - the request never reached the worker
+    throw new NetworkError(
+      `cannot reach API at ${API_URL}: ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+  }
+
   let json: ApiResponse<T> | null = null;
   try {
     json = (await res.json()) as ApiResponse<T>;
@@ -73,16 +92,17 @@ async function request<T>(
     json = null;
   }
   if (!json) {
-    throw new ApiError(res.status, `HTTP ${res.status}`);
+    throw new ApiError(res.status, `HTTP ${res.status} (no JSON body)`);
   }
   if (json.ok === false) {
     if (res.status === 401) {
       clearAuth();
       if (typeof window !== "undefined") {
-        // gentle redirect
         const cur = window.location.pathname;
         if (!cur.startsWith("/login") && !cur.startsWith("/admin/login")) {
-          window.location.href = cur.startsWith("/admin") ? "/admin/login" : "/login";
+          window.location.href = cur.startsWith("/admin")
+            ? "/admin/login"
+            : "/login";
         }
       }
     }
@@ -102,6 +122,16 @@ export const api = {
   del: <T>(p: string) => request<T>(p, { method: "DELETE" }),
 };
 
+// Friendly error formatter for UI components.
+export function formatError(e: unknown): string {
+  if (e instanceof NetworkError) {
+    return `${e.message}. Make sure the worker is running (npm run dev:worker).`;
+  }
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof Error) return e.message;
+  return "Unknown error";
+}
+
 // Endpoint wrappers
 export type LoginResp = {
   token: string;
@@ -115,4 +145,17 @@ export const auth = {
   me: () => api.get<unknown>("/api/me"),
   changePassword: (current_password: string, new_password: string) =>
     api.post("/api/admin/change-password", { current_password, new_password }),
+};
+
+// Diagnostics endpoint - useful for debugging "login doesn't work".
+export type Diag = {
+  has_db: boolean;
+  has_jwt_secret: boolean;
+  allowed_origins: string;
+  db_ready?: boolean;
+  db_error?: string;
+  admin_count?: number;
+};
+export const diag = {
+  check: () => api.get<Diag>("/api/_diag"),
 };

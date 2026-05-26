@@ -10,4 +10,4 @@ database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
 [vars]
-ALLOWED_ORIGINS = "http://localhost:3000"
+ALLOWED_ORIGINS = "*"

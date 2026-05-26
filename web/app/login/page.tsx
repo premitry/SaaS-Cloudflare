@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ApiError, auth, setActor, setToken } from "../../lib/api";
+import { auth, formatError, setActor, setToken } from "../../lib/api";
 import { IconCloud } from "../../components/Icon";
 
 export default function UserLoginPage() {
@@ -22,7 +22,7 @@ export default function UserLoginPage() {
       setActor(r.actor);
       router.replace("/dashboard");
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : "Login failed");
+      setErr(formatError(e));
     } finally {
       setLoading(false);
     }

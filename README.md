@@ -61,12 +61,19 @@ Open <http://localhost:3000>, click **Admin login**, and submit any
 username + password (>= 8 chars). On a fresh database the first credentials
 you submit become the initial admin.
 
-When you are ready to ship, one more command does the production deploy
-(secret + CORS + remote migrate + worker deploy + admin bootstrap):
+When you are ready to ship, two commands do the whole production deploy
+(worker + dashboard):
 
 ```bash
 npx wrangler login        # one-time, if you haven't already
-npm run deploy:setup      # guided production deploy
+npm run deploy:setup      # backend: secret + CORS + remote migrate + wrangler deploy + admin bootstrap
+npm run deploy:web        # frontend: build + wrangler pages deploy
+```
+
+Or run both with one command:
+
+```bash
+npm run deploy            # = deploy:setup && deploy:web
 ```
 
 See [section 13](#13-deploy-to-production) for details.
@@ -444,28 +451,52 @@ After it finishes you only need to deploy the **frontend** (see [13.3](#133-buil
 npm run deploy:worker
 ```
 
-### 13.3 Build & deploy the frontend
-
-The deploy script printed your worker URL (e.g.
-`https://cfp-worker.<subdomain>.workers.dev`).
-
-Set it in `web/.env.local` (and in your hosting platform's env vars):
-
-```
-NEXT_PUBLIC_API_URL=https://cfp-worker.<subdomain>.workers.dev
-```
-
-Build:
+### 13.3 Easy way: deploy the dashboard with `npm run deploy:web`
 
 ```bash
-npm run build:web
+npm run deploy:web
 ```
 
-Deploy on **Cloudflare Pages**:
+The script will:
+
+| Step | What happens |
+|---|---|
+| 1 | Verifies `wrangler whoami` |
+| 2 | Asks for the worker URL and saves it into `web/.env.local` |
+| 3 | Builds Next.js for Cloudflare Pages (`npx @cloudflare/next-on-pages`) |
+| 4 | Deploys with `npx wrangler pages deploy .vercel/output/static --project-name=<name>` |
+| 5 | Prints `https://<project>.pages.dev` |
+
+To deploy **everything** (worker + dashboard) in one go:
 
 ```bash
-# from the project root
-npx wrangler pages deploy web/.next --project-name=cfp-web
+npm run deploy
+# = npm run deploy:setup && npm run deploy:web
+```
+
+To re-deploy after code changes:
+
+```bash
+npm run deploy:worker      # worker only
+npm run deploy:web         # dashboard only
+```
+
+### 13.4 Manual: deploy the dashboard yourself
+
+If you want to run the commands yourself instead of using the wizard:
+
+```bash
+# 1. point web/.env.local at your worker
+echo 'NEXT_PUBLIC_API_URL=https://cfp-worker.<subdomain>.workers.dev' \
+  > web/.env.local
+
+# 2. build for Cloudflare Pages
+cd web
+npx @cloudflare/next-on-pages
+# -> output goes to web/.vercel/output/static
+
+# 3. deploy
+npx wrangler pages deploy .vercel/output/static --project-name=cfp-web
 ```
 
 Or on **Vercel**:
@@ -475,7 +506,7 @@ cd web
 npx vercel --prod
 ```
 
-### 13.4 Manual way (if `deploy:setup` is not what you want)
+### 13.5 Manual way for the worker (if `deploy:setup` is not what you want)
 
 Run each step yourself:
 
@@ -494,7 +525,8 @@ npm run db:migrate:remote
 #    ALLOWED_ORIGINS = "https://your-dashboard-domain.com"
 
 # 4. deploy the worker
-npm run deploy:worker
+npx --workspace worker wrangler deploy
+# (or: npm run deploy:worker)
 
 # 5. bootstrap the first admin (replace WORKER_URL)
 curl -X POST https://WORKER_URL/api/admin/bootstrap \
@@ -502,7 +534,7 @@ curl -X POST https://WORKER_URL/api/admin/bootstrap \
   -d '{"username":"admin","password":"a-very-strong-password"}'
 ```
 
-### 13.5 Production checklist
+### 13.6 Production checklist
 
 - [ ] `JWT_SECRET` set as a Workers secret (not a plain var)
 - [ ] `ALLOWED_ORIGINS` matches your frontend domain
@@ -532,10 +564,12 @@ npm run db:seed:local       # info only (admin is bootstrapped at runtime)
 npm run db:seed:remote
 
 # deploy (production)
-npm run deploy:setup        # one-time guided setup: secret + CORS + migrate + deploy + admin
-npm run deploy:worker       # re-deploy the worker only (after code changes)
-npm run build:web           # production build of the dashboard
-npm run deploy              # deploy worker AND build web
+npm run deploy:setup        # backend wizard: secret + CORS + migrate + wrangler deploy + admin
+npm run deploy:web          # frontend wizard: build + wrangler pages deploy
+npm run deploy              # both: deploy:setup + deploy:web
+npm run deploy:worker       # re-deploy worker only (alias of `wrangler deploy`)
+npm run build:web           # local Node build of the dashboard
+npm run build:web:cf        # Cloudflare Pages build (next-on-pages)
 
 # direct wrangler from anywhere
 npx --workspace worker wrangler tail        # live logs of the worker
@@ -616,6 +650,40 @@ npx wrangler dev --port 8788
 # update web/.env.local accordingly
 echo 'NEXT_PUBLIC_API_URL=http://127.0.0.1:8788' > ../web/.env.local
 ```
+
+### Admin login on a fresh DB doesn't work
+
+Open <http://127.0.0.1:8787/api/_diag> directly. You should see something like:
+
+```json
+{ "ok": true, "data": { "has_db": true, "has_jwt_secret": true, "db_ready": true, "admin_count": 0 } }
+```
+
+Common issues:
+
+- `has_jwt_secret: false` -> `worker/.dev.vars` is missing or empty.
+  Fix: re-run `npm run setup`, or create the file manually:
+  ```bash
+  node -e "console.log('JWT_SECRET = \"' + require('crypto').randomBytes(48).toString('base64url') + '\"')" \
+    > worker/.dev.vars
+  ```
+  Then restart the worker (`npm run dev`).
+
+- `db_ready: false` (or error mentions "no such table") -> migrations haven't
+  been applied. Fix:
+  ```bash
+  npm run db:migrate:local
+  ```
+
+- The login page shows "cannot reach API" -> the worker isn't running on
+  port 8787. Run `npm run dev:worker` (or `npm run dev`) in another terminal.
+
+- The login page accepts the form but nothing happens -> open the browser
+  DevTools Network tab, click on the failed `/api/admin/login` request,
+  and read the response body. The error message tells you exactly what failed.
+
+The login page itself shows a yellow warning bar when these conditions are
+detected, with the exact command to run.
 
 ### "Cloudflare token invalid" when connecting an account
 
