@@ -61,6 +61,16 @@ Open <http://localhost:3000>, click **Admin login**, and submit any
 username + password (>= 8 chars). On a fresh database the first credentials
 you submit become the initial admin.
 
+When you are ready to ship, one more command does the production deploy
+(secret + CORS + remote migrate + worker deploy + admin bootstrap):
+
+```bash
+npx wrangler login        # one-time, if you haven't already
+npm run deploy:setup      # guided production deploy
+```
+
+See [section 13](#13-deploy-to-production) for details.
+
 ---
 
 ## 2. Requirements
@@ -405,48 +415,41 @@ you delete them manually.
 
 ## 13. Deploy to production
 
-### 13.1 Set the production JWT secret (one-time)
+### 13.1 Easy way: `npm run deploy:setup` (recommended)
+
+One guided command that does the whole production setup for you:
 
 ```bash
-cd worker
-npx wrangler secret put JWT_SECRET
-# paste a long random string when prompted, e.g.:
-#   openssl rand -base64 48
-cd ..
+# from the project root, after `npx wrangler login`
+npm run deploy:setup
 ```
 
-### 13.2 Apply migrations to remote D1 (one-time per change)
+The script will:
 
-```bash
-npm run db:migrate:remote
-```
+| Step | What happens |
+|---|---|
+| 1 | Verifies you are logged in to Cloudflare (`wrangler whoami`) |
+| 2 | Verifies `worker/wrangler.toml` has a real D1 `database_id` |
+| 3 | Applies all migrations to **remote** D1 |
+| 4 | Generates a strong random `JWT_SECRET` and stores it as a Workers secret |
+| 5 | Asks for your frontend URL and writes it into `ALLOWED_ORIGINS` (CORS) |
+| 6 | Runs `wrangler deploy` and prints the worker URL |
+| 7 | Asks for an admin username + password and bootstraps the first admin |
 
-### 13.3 Deploy the worker
+After it finishes you only need to deploy the **frontend** (see [13.3](#133-build--deploy-the-frontend)).
 
-```bash
-npm run deploy:worker
-```
-
-Wrangler prints a URL like `https://cfp-worker.<subdomain>.workers.dev`. Copy it.
-
-### 13.4 Update CORS allowlist on the worker
-
-Edit `worker/wrangler.toml`:
-
-```toml
-[vars]
-ALLOWED_ORIGINS = "https://your-dashboard-domain.com"
-```
-
-Re-deploy:
+### 13.2 To re-deploy the worker later (no setup, just code changes)
 
 ```bash
 npm run deploy:worker
 ```
 
-### 13.5 Build & deploy the frontend
+### 13.3 Build & deploy the frontend
 
-Edit `web/.env.local` (and your hosting platform's env vars):
+The deploy script printed your worker URL (e.g.
+`https://cfp-worker.<subdomain>.workers.dev`).
+
+Set it in `web/.env.local` (and in your hosting platform's env vars):
 
 ```
 NEXT_PUBLIC_API_URL=https://cfp-worker.<subdomain>.workers.dev
@@ -472,17 +475,34 @@ cd web
 npx vercel --prod
 ```
 
-### 13.6 Bootstrap the production admin
+### 13.4 Manual way (if `deploy:setup` is not what you want)
+
+Run each step yourself:
 
 ```bash
-curl -X POST https://cfp-worker.<subdomain>.workers.dev/api/admin/bootstrap \
+# 1. set the JWT secret (one-time)
+cd worker
+npx wrangler secret put JWT_SECRET
+# paste a long random string, e.g. `openssl rand -base64 48`
+cd ..
+
+# 2. apply migrations to remote D1
+npm run db:migrate:remote
+
+# 3. update CORS in worker/wrangler.toml
+#    [vars]
+#    ALLOWED_ORIGINS = "https://your-dashboard-domain.com"
+
+# 4. deploy the worker
+npm run deploy:worker
+
+# 5. bootstrap the first admin (replace WORKER_URL)
+curl -X POST https://WORKER_URL/api/admin/bootstrap \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"a-very-strong-password"}'
 ```
 
-After that, change the password from **Settings -> Change Password** in the dashboard.
-
-### 13.7 Production checklist
+### 13.5 Production checklist
 
 - [ ] `JWT_SECRET` set as a Workers secret (not a plain var)
 - [ ] `ALLOWED_ORIGINS` matches your frontend domain
@@ -496,7 +516,7 @@ After that, change the password from **Settings -> Change Password** in the dash
 ## 14. Common commands
 
 ```bash
-# install + first-time setup
+# install + first-time local setup
 npm run setup
 
 # dev (worker + web together)
@@ -511,8 +531,9 @@ npm run db:migrate:remote   # apply migrations to production D1
 npm run db:seed:local       # info only (admin is bootstrapped at runtime)
 npm run db:seed:remote
 
-# deploy
-npm run deploy:worker       # deploy backend to Cloudflare Workers
+# deploy (production)
+npm run deploy:setup        # one-time guided setup: secret + CORS + migrate + deploy + admin
+npm run deploy:worker       # re-deploy the worker only (after code changes)
 npm run build:web           # production build of the dashboard
 npm run deploy              # deploy worker AND build web
 

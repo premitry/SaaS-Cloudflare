@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "deploy:setup": "node scripts/deploy.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:worker": "npm --workspace worker run dev",
     "dev:web": "npm --workspace web run dev",
