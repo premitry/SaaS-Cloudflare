@@ -1,23 +1,21 @@
 #!/usr/bin/env node
 // Cross-platform one-shot setup script.
-// Usage:  npm run setup
+//   npm run setup
 //
-// What it does:
 // 1. Verifies Node 20+
 // 2. Runs `npm install` if node_modules is missing
-// 3. Copies worker/wrangler.example.toml -> worker/wrangler.toml (if missing)
-// 4. Generates worker/.dev.vars with a random JWT_SECRET (if missing)
-// 5. Copies web/.env.example -> web/.env.local (if missing)
-// 6. Optionally creates a D1 database and applies migrations
-// 7. Prints next-steps
+// 3. Copies worker/wrangler.example.toml -> worker/wrangler.toml
+// 4. Generates worker/.dev.vars with a random JWT_SECRET
+// 5. Optionally creates a D1 database and writes its id into wrangler.toml
+// 6. Applies all migrations to the local D1
+// 7. Builds the dashboard (web/dist) so it is ready to be served by the worker
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   readFileSync,
   writeFileSync,
   copyFileSync,
-  mkdirSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { resolve, dirname } from "node:path";
@@ -29,7 +27,6 @@ const root = resolve(__dirname, "..");
 
 const C = {
   reset: "\x1b[0m",
-  dim: "\x1b[2m",
   bold: "\x1b[1m",
   cyan: "\x1b[36m",
   green: "\x1b[32m",
@@ -59,16 +56,14 @@ function ask(q, def = "") {
 }
 
 function runSync(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, {
+  return spawnSync(cmd, args, {
     stdio: opts.capture ? "pipe" : "inherit",
     encoding: "utf8",
     shell: process.platform === "win32",
     ...opts,
   });
-  return r;
 }
 
-// ---- Step 1: Node version ----
 banner("Cloudflare Domain Panel - Setup");
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 if (nodeMajor < 20) {
@@ -77,7 +72,6 @@ if (nodeMajor < 20) {
 }
 ok(`Node ${process.versions.node}`);
 
-// ---- Step 2: Install deps ----
 if (!existsSync(resolve(root, "node_modules"))) {
   log("Installing dependencies (this may take a minute)...");
   const r = runSync("npm", ["install"], { cwd: root });
@@ -88,7 +82,6 @@ if (!existsSync(resolve(root, "node_modules"))) {
 }
 ok("Dependencies installed");
 
-// ---- Step 3: worker/wrangler.toml ----
 const workerDir = resolve(root, "worker");
 const wranglerToml = resolve(workerDir, "wrangler.toml");
 const wranglerExample = resolve(workerDir, "wrangler.example.toml");
@@ -99,7 +92,6 @@ if (!existsSync(wranglerToml)) {
   ok("worker/wrangler.toml exists");
 }
 
-// ---- Step 4: worker/.dev.vars (JWT secret) ----
 const devVars = resolve(workerDir, ".dev.vars");
 if (!existsSync(devVars)) {
   const secret = randomBytes(48).toString("base64url");
@@ -109,16 +101,6 @@ if (!existsSync(devVars)) {
   ok("worker/.dev.vars exists");
 }
 
-// ---- Step 5: web/.env.local ----
-const webEnv = resolve(root, "web/.env.local");
-if (!existsSync(webEnv)) {
-  copyFileSync(resolve(root, "web/.env.example"), webEnv);
-  ok("Created web/.env.local");
-} else {
-  ok("web/.env.local exists");
-}
-
-// ---- Step 6: D1 database ----
 banner("D1 Database");
 const tomlContent = readFileSync(wranglerToml, "utf8");
 const placeholder = "REPLACE_WITH_YOUR_D1_DATABASE_ID";
@@ -127,16 +109,17 @@ const idMatch = tomlContent.match(/database_id\s*=\s*"([^"]+)"/);
 if (idMatch && idMatch[1] !== placeholder) {
   ok(`D1 database_id already set: ${idMatch[1]}`);
   log("Applying migrations (local)...");
-  runSync("npx", ["wrangler", "d1", "migrations", "apply", "cfp_db", "--local"], {
-    cwd: workerDir,
-  });
+  runSync(
+    "npx",
+    ["wrangler", "d1", "migrations", "apply", "cfp_db", "--local"],
+    { cwd: workerDir }
+  );
 } else {
   warn("D1 database_id is not set yet.");
   console.log(`
   This step requires:
    - A Cloudflare account
    - You must be logged in:  ${C.cyan}npx wrangler login${C.reset}
-   - Network access to api.cloudflare.com
 `);
   const create = await ask("Create a new D1 database now? (y/N)", "n");
   if (create.toLowerCase().startsWith("y")) {
@@ -145,11 +128,9 @@ if (idMatch && idMatch[1] !== placeholder) {
       cwd: workerDir,
       capture: true,
     });
-    const stdout = r.stdout || "";
-    const stderr = r.stderr || "";
-    process.stdout.write(stdout);
-    if (stderr) process.stderr.write(stderr);
-    const m = stdout.match(/database_id\s*=\s*"([^"]+)"/);
+    process.stdout.write(r.stdout || "");
+    if (r.stderr) process.stderr.write(r.stderr);
+    const m = (r.stdout || "").match(/database_id\s*=\s*"([^"]+)"/);
     if (m) {
       const newId = m[1];
       const updated = readFileSync(wranglerToml, "utf8").replace(
@@ -172,31 +153,37 @@ if (idMatch && idMatch[1] !== placeholder) {
     }
   } else {
     warn(
-      `Skipped. Edit ${C.cyan}worker/wrangler.toml${C.reset} and replace ${placeholder} with your D1 id, then run:`
+      `Skipped. Edit ${C.cyan}worker/wrangler.toml${C.reset} and replace ${placeholder}, then run:`
     );
     console.log(`     ${C.cyan}npm run db:migrate:local${C.reset}`);
   }
 }
 
-// ---- Done ----
+banner("Build the dashboard (web/dist)");
+log("Running: npm --workspace web run build");
+const b = runSync("npm", ["--workspace", "web", "run", "build"], { cwd: root });
+if (b.status !== 0) {
+  warn("Frontend build failed. You can re-run later with `npm run build`.");
+} else {
+  ok("Dashboard built -> web/dist");
+}
+
 banner("All set!");
 console.log(`
 Next steps:
 
-  1. Start dev servers (worker + web together):
+  1. Start dev servers:
        ${C.cyan}npm run dev${C.reset}
+       Worker:    http://127.0.0.1:8787   (UI + API together)
+       Vite dev:  http://localhost:5173   (faster UI dev with hot reload, API proxied)
 
-  2. Open the dashboard:
-       ${C.cyan}http://localhost:3000${C.reset}
+  2. Open ${C.cyan}http://127.0.0.1:8787${C.reset} (or :5173) and create the first admin
+     at ${C.cyan}/admin/login${C.reset}.
 
-  3. Click "Admin login" and submit any username + password (>= 8 chars).
-     On a fresh DB, the first credentials you submit become the admin.
+To deploy to production (Cloudflare Workers):
+  ${C.cyan}npm run deploy:setup${C.reset}    # one-time: secret + remote migrations + admin
+  ${C.cyan}npm run deploy${C.reset}          # build dashboard + wrangler deploy
 
-  4. Connect a Cloudflare account, then create user codes.
-
-For full walkthrough see ${C.cyan}README.md${C.reset}.
-
-To deploy to production:
-  ${C.cyan}npm run deploy:worker${C.reset}     # backend (Cloudflare Workers)
-  ${C.cyan}npm run build:web${C.reset}         # frontend (Cloudflare Pages / Vercel)
+After deploy, your single URL serves everything:
+  https://cfp-worker.<subdomain>.workers.dev
 `);

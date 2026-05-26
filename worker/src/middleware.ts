@@ -7,18 +7,30 @@ import type { Env, Variables, Actor } from "./types";
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
 export async function corsMw(c: Ctx, next: Next) {
-  const allow = c.env.ALLOWED_ORIGINS ?? "*";
+  // Default: allow any origin in dev. Production should pin this in wrangler.toml.
+  const allow = (c.env.ALLOWED_ORIGINS ?? "*").trim();
   const origin = c.req.header("Origin") ?? "";
-  const allowed =
-    allow === "*" ||
-    allow.split(",").map((s) => s.trim()).includes(origin);
-  const headers = {
-    "Access-Control-Allow-Origin": allowed ? origin || "*" : "",
+  let allowed = false;
+  let allowOriginHeader = "";
+  if (allow === "*" || allow === "") {
+    allowed = true;
+    allowOriginHeader = origin || "*";
+  } else {
+    const list = allow.split(",").map((s) => s.trim()).filter(Boolean);
+    if (list.includes(origin)) {
+      allowed = true;
+      allowOriginHeader = origin;
+    }
+  }
+
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Headers": "Authorization,Content-Type",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
+  if (allowed) headers["Access-Control-Allow-Origin"] = allowOriginHeader;
+
   if (c.req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers });
   }

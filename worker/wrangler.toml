@@ -3,11 +3,20 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Cloudflare D1 database for the panel state.
 [[d1_databases]]
 binding = "DB"
 database_name = "cfp_db"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
+# Static assets: the dashboard UI is built into ../web/dist and served by this
+# same Worker. /api/* requests are handled by the worker code.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+
 [vars]
-ALLOWED_ORIGINS = "http://localhost:3000"
+# Same-origin in production, so CORS is essentially a no-op. Leave "*" so
+# tools like curl from anywhere also work.
+ALLOWED_ORIGINS = "*"

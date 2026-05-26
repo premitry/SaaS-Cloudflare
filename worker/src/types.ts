@@ -4,6 +4,7 @@ export type Env = {
   DB: D1Database;
   JWT_SECRET: string;
   ALLOWED_ORIGINS?: string;
+  ASSETS?: Fetcher; // [assets] binding -- serves the dashboard UI
 };
 
 export type AdminActor = {

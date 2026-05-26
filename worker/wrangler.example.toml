@@ -10,12 +10,14 @@ database_name = "cfp_db"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
-# Secrets / vars (use `wrangler secret put` for production)
-[vars]
-# CORS allowlist - comma separated origins, or "*" for any
-ALLOWED_ORIGINS = "http://localhost:3000"
-# Override default admin bootstrap (used by seed.sql only on first run)
+# Static dashboard. Built by `npm run build:web` -> ../web/dist
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
 
-# IMPORTANT: use `wrangler secret put JWT_SECRET` for production.
-# For local dev create .dev.vars in this folder with:
-# JWT_SECRET = "change-me-to-a-long-random-string"
+[vars]
+ALLOWED_ORIGINS = "*"
+
+# IMPORTANT: do NOT put JWT_SECRET here for production.
+#   Local dev:    `worker/.dev.vars`  (auto-created by `npm run setup`)
+#   Production:   `npx wrangler secret put JWT_SECRET`
