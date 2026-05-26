@@ -1,7 +1,12 @@
 // Password hashing (PBKDF2-SHA-256) and JWT (HS256) using Web Crypto only.
 // No third-party crypto deps -- everything runs natively on Workers.
 
-const PBKDF2_ITERATIONS = 210_000;
+// Cloudflare Workers caps PBKDF2 iterations at 100,000. Going above that throws
+// "Pbkdf2 failed: iteration counts above 100000 are not supported".
+// Below OWASP's 600,000 recommendation for SHA-256, but it's the max Workers
+// will run, and the JWT_SECRET + per-user random salt still keep this safe
+// enough for an admin panel use case.
+const PBKDF2_ITERATIONS = 100_000;
 const PBKDF2_KEYLEN = 32; // 256 bits
 
 const enc = new TextEncoder();

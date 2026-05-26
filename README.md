@@ -301,6 +301,26 @@ Open `https://<your-worker-url>/api/_diag`. Expected:
 | `db_ready` | `npm run db:migrate:remote` |
 | `has_assets` | `npm run deploy` (rebuilds + redeploys with the dashboard) |
 
+### `login failed: Pbkdf2 failed: iteration counts above 100000 are not supported`
+
+You're on an old build. Cloudflare Workers caps PBKDF2 at 100,000 iterations.
+Pull the latest code and re-deploy:
+
+```bash
+git pull origin main
+npm run deploy
+```
+
+If the error persists, your remote D1 may still have a stale admin row from a
+half-failed bootstrap. Wipe it and let the next login create a fresh one:
+
+```bash
+npx --workspace worker wrangler d1 execute cfp_db --remote \
+  --command="DELETE FROM admins;"
+```
+
+Then visit `/admin/login` and submit credentials -> they become the new admin.
+
 ### "Cloudflare token invalid" when connecting an account
 
 - Make sure the token has all the scopes in [section 7](#7-cloudflare-api-token-scopes)
@@ -417,7 +437,8 @@ SaaS-Cloudflare/
 
 ## 14. Security Model
 
-- Passwords hashed with **PBKDF2-SHA-256** (210,000 iterations) via Web Crypto
+- Passwords hashed with **PBKDF2-SHA-256** (100,000 iterations - the max
+  Cloudflare Workers allows) via Web Crypto
 - Sessions are signed JWTs (HS256) using `JWT_SECRET` (random per install)
 - User JWT is bound to `login_code` -> regenerating a code instantly
   invalidates all old tokens
