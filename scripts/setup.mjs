@@ -194,7 +194,7 @@ Next steps:
 
   4. Connect a Cloudflare account, then create user codes.
 
-For full walkthrough see ${C.cyan}TUTORIAL.md${C.reset}.
+For full walkthrough see ${C.cyan}README.md${C.reset}.
 
 To deploy to production:
   ${C.cyan}npm run deploy:worker${C.reset}     # backend (Cloudflare Workers)

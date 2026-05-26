@@ -6,27 +6,49 @@ A SaaS-style dashboard for managing Cloudflare zones across **multiple Cloudflar
 
 ---
 
-## Table of Contents
+## Features
 
-- [Quick Start (3 commands)](#quick-start-3-commands)
-- [Requirements](#requirements)
-- [Step-by-step install](#step-by-step-install)
-- [Manual install (if `npm run setup` fails)](#manual-install-if-npm-run-setup-fails)
-- [Run the app](#run-the-app)
-- [First admin login](#first-admin-login)
-- [Connect a Cloudflare account](#connect-a-cloudflare-account)
-- [Create a user code](#create-a-user-code)
-- [Deploy to production](#deploy-to-production)
-- [Common commands](#common-commands)
-- [Reset / fix things](#reset--fix-things)
-- [Repository Layout](#repository-layout)
-- [Cloudflare API token scopes](#cloudflare-api-token-scopes)
-- [Security Model](#security-model)
-- [License](#license)
+- Admin login (username + password, hashed with PBKDF2-SHA-256)
+- User login by **CODE** (temporary 1d / 7d / 30d / custom or permanent)
+- Connect **multiple Cloudflare accounts** with scoped API tokens
+- Domains stay inside the admin's Cloudflare accounts
+- Per-user **domain assignment** with checkbox + search
+- Permission flags: DNS / Email Routing / Domain Settings / Full Access
+- DNS records CRUD with proxy toggle
+- Email Routing: enable/disable, catch-all, forward rules, destinations
+- Domain Settings: SSL mode, Always HTTPS, Cache Purge
+- Setup checker (DNS / Email / SSL)
+- Audit logs (every mutation, with IP)
+- Session revocation (regenerating a code logs the user out everywhere)
+- Dark mode UI inspired by Cloudflare / GitHub / Vercel
 
 ---
 
-## Quick Start (3 commands)
+## Table of Contents
+
+1. [Quick Start (3 commands)](#1-quick-start-3-commands)
+2. [Requirements](#2-requirements)
+3. [Install](#3-install)
+4. [Run](#4-run)
+5. [First admin login](#5-first-admin-login)
+6. [Get a Cloudflare API token](#6-get-a-cloudflare-api-token)
+7. [Connect your Cloudflare account](#7-connect-your-cloudflare-account)
+8. [Create a user code](#8-create-a-user-code)
+9. [Use the panel as a user](#9-use-the-panel-as-a-user)
+10. [Email Routing](#10-email-routing)
+11. [Domain Settings & Cache Purge](#11-domain-settings--cache-purge)
+12. [Audit log](#12-audit-log)
+13. [Deploy to production](#13-deploy-to-production)
+14. [Common commands](#14-common-commands)
+15. [Manual install (if `npm run setup` fails)](#15-manual-install-if-npm-run-setup-fails)
+16. [Reset / fix things](#16-reset--fix-things)
+17. [Repository Layout](#17-repository-layout)
+18. [Security Model](#18-security-model)
+19. [License](#19-license)
+
+---
+
+## 1. Quick Start (3 commands)
 
 ```bash
 git clone https://github.com/premitry/SaaS-Cloudflare.git
@@ -39,11 +61,9 @@ Open <http://localhost:3000>, click **Admin login**, and submit any
 username + password (>= 8 chars). On a fresh database the first credentials
 you submit become the initial admin.
 
-For the full walkthrough see **[TUTORIAL.md](./TUTORIAL.md)**.
-
 ---
 
-## Requirements
+## 2. Requirements
 
 | Tool | Min version | Check command |
 |---|---|---|
@@ -51,6 +71,8 @@ For the full walkthrough see **[TUTORIAL.md](./TUTORIAL.md)**.
 | npm | 10 | `npm --version` |
 | git | any | `git --version` |
 | Cloudflare account | free plan OK | <https://dash.cloudflare.com/sign-up> |
+
+You also need at least one domain added to Cloudflare (any plan, free is fine).
 
 If you don't have Node 20+, install it from <https://nodejs.org> or via nvm:
 
@@ -62,20 +84,20 @@ nvm use 20
 
 ---
 
-## Step-by-step install
+## 3. Install
 
-### 1. Clone the repo
+### 3.1 Clone the repo
 
 ```bash
 git clone https://github.com/premitry/SaaS-Cloudflare.git
 cd SaaS-Cloudflare
 ```
 
-### 2. Log in to Cloudflare CLI (one-time)
+### 3.2 Log in to the Cloudflare CLI (one-time)
 
 This opens your browser so the wrangler CLI can talk to your account.
-Required only the first time and only if you want the setup script to create the
-D1 database for you.
+Required only the first time, and only if you want the setup script to create
+the D1 database for you.
 
 ```bash
 npx wrangler login
@@ -87,14 +109,14 @@ Verify:
 npx wrangler whoami
 ```
 
-Expected output (your email/account):
+Expected output:
 
 ```
 You are logged in with the OAuth Token, associated with the email you@example.com
 Your account ID: abcd1234ef5678...
 ```
 
-### 3. Run the setup wizard
+### 3.3 Run the setup wizard
 
 ```bash
 npm run setup
@@ -102,63 +124,38 @@ npm run setup
 
 When prompted **"Create a new D1 database now? (y/N)"** type **`y`** and press Enter.
 
-The script will:
+What the wizard does:
 
-1. install all dependencies (`npm install`)
-2. create `worker/wrangler.toml` from the example
-3. generate a random `JWT_SECRET` and write it to `worker/.dev.vars`
-4. create `web/.env.local`
-5. run `npx wrangler d1 create cfp_db` and put the returned ID into `wrangler.toml`
-6. apply migrations to your local D1 (`wrangler d1 migrations apply cfp_db --local`)
+| Step | What happens |
+|---|---|
+| 1 | Verifies Node 20+ |
+| 2 | Runs `npm install` if needed |
+| 3 | Creates `worker/wrangler.toml` from the example |
+| 4 | Generates a random `JWT_SECRET` and writes it to `worker/.dev.vars` |
+| 5 | Creates `web/.env.local` from the example |
+| 6 | Runs `npx wrangler d1 create cfp_db` |
+| 7 | Writes the database id into `worker/wrangler.toml` automatically |
+| 8 | Applies all migrations to your local D1 |
 
-It is **safe to re-run** at any time. It will not overwrite files that already exist.
-
----
-
-## Manual install (if `npm run setup` fails)
-
-Run these one by one if the wizard didn't work for you:
-
-```bash
-# 1. install
-npm install
-
-# 2. config files
-cp worker/wrangler.example.toml worker/wrangler.toml
-cp worker/.dev.vars.example worker/.dev.vars
-cp web/.env.example web/.env.local
-
-# 3. generate a JWT_SECRET (replace the placeholder)
-node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-# copy the output, then edit worker/.dev.vars:
-#   JWT_SECRET = "<paste here>"
-
-# 4. create D1
-npx wrangler login
-npx --workspace worker wrangler d1 create cfp_db
-# copy the database_id from the output, then edit worker/wrangler.toml:
-#   database_id = "<paste here>"
-
-# 5. apply migrations
-npm run db:migrate:local
-```
+The wizard is **idempotent** - it is safe to re-run at any time. It will not
+overwrite files that already exist.
 
 ---
 
-## Run the app
+## 4. Run
 
 ```bash
 npm run dev
 ```
 
-You will see prefixed logs like:
+You will see two prefixed log streams:
 
 ```
 [worker] Ready on http://127.0.0.1:8787
 [web   ] - Local:  http://localhost:3000
 ```
 
-Open <http://localhost:3000>. Stop both servers with `Ctrl+C` once.
+Leave it running. Stop both servers with `Ctrl+C`.
 
 If you only want one of them:
 
@@ -169,13 +166,25 @@ npm run dev:web        # only the dashboard on :3000
 
 ---
 
-## First admin login
+## 5. First admin login
 
-1. Go to <http://localhost:3000/admin/login>
-2. Type any username (e.g. `admin`) and a password of at least 8 characters
-3. Click **Sign in**
+1. Open <http://localhost:3000>
+2. Click **Admin login** (or go to `/admin/login`)
+3. Type a username (e.g. `admin`) and a password of at least 8 characters
+4. Click **Sign in**
 
-> On an empty database, the first credentials you submit become the admin.
+> On an empty database, the first credentials you submit become the initial
+> admin account. Choose a strong password.
+
+You should land on the dashboard:
+
+```
+Dashboard
+  Cloudflare Accounts: 0
+  Domains: 0
+  Users: 0
+  Audit Events: 1   <- your login was recorded
+```
 
 You can also bootstrap via curl (useful for headless setups):
 
@@ -187,68 +196,240 @@ curl -X POST http://127.0.0.1:8787/api/admin/bootstrap \
 
 ---
 
-## Connect a Cloudflare account
+## 6. Get a Cloudflare API token
 
-1. Create a scoped API token at <https://dash.cloudflare.com/profile/api-tokens>
-   (see [scopes below](#cloudflare-api-token-scopes))
-2. In the panel, open **Cloudflare Accounts**  ->  **Connect Account**
-3. Paste the token and click **Connect**
+1. Open <https://dash.cloudflare.com/profile/api-tokens>
+2. Click **Create Token**
+3. Choose **Create Custom Token**
+4. Give it a name (e.g. `panel-token`)
+5. Add the following permissions (click **+ Add more** between rows):
 
-The panel verifies the token, captures your account ID, and syncs every zone
-into the local database.
+   | Resource | Permission |
+   |---|---|
+   | Zone -> Zone | Read |
+   | Zone -> DNS | Edit |
+   | Zone -> Email Routing Rules | Edit |
+   | Zone -> Email Routing Addresses | Edit |
+   | Zone -> Zone Settings | Edit |
+   | Zone -> Cache Purge | Purge |
+   | Account -> Email Routing Addresses | Edit |
 
-You can also test the token quickly:
+6. **Zone Resources** -> Include -> All zones (or specific zones if you prefer)
+7. **Account Resources** -> Include -> your account (needed for email destinations)
+8. Click **Continue to summary** -> **Create Token**
+9. **Copy the token now**. Cloudflare only shows it once.
+
+You can verify the token with curl before pasting into the UI:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" \
   https://api.cloudflare.com/client/v4/user/tokens/verify
 ```
 
+Expected:
+
+```json
+{"result":{"id":"...","status":"active"},"success":true}
+```
+
 ---
 
-## Create a user code
+## 7. Connect your Cloudflare account
 
 In the panel:
 
-1. **Users**  ->  **Add User**
-2. Pick a Cloudflare account, set expiry (1d / 7d / 30d / custom / permanent)
-3. Tick the **permissions**: DNS / Email Routing / Domain Settings / Full Access
-4. Tick the **domains** the code may access
-5. Click **Create user**  ->  the generated code (e.g. `SHOP-K82P1`) appears
+1. Click **Cloudflare Accounts** in the sidebar
+2. Click **Connect Account**
+3. Fill in:
+   - **Name**: a label, e.g. `Personal CF` or `Company A`
+   - **Email** *(optional)*: just for your reference
+   - **API Token**: paste the token from step 6
+4. Click **Connect**
 
-Share the code with your user. They log in at <http://localhost:3000/login>.
+The panel will:
 
-To rotate a user's code (which logs them out instantly):
-- click the refresh icon on the user row.
+- verify the token against Cloudflare
+- pull your account ID
+- sync every zone (domain) into the local database
+
+You will see a row like:
+
+```
+Personal CF    you@example.com    abcd1234...    [4 domains]    just now
+```
+
+To re-sync after adding a new zone in Cloudflare, click the **Sync** button on
+that row.
+
+> **Tip:** You can connect multiple Cloudflare accounts. Each one keeps its own
+> domains, users, and audit log.
 
 ---
 
-## Deploy to production
+## 8. Create a user code
 
-### 1. Set the production JWT secret (one-time)
+Users authenticate with a CODE, not a password. Each code is tied to one
+Cloudflare account and a list of domains.
+
+1. Click **Users** in the sidebar
+2. Click **Add User**
+3. Fill in the form:
+
+   | Field | What to enter |
+   |---|---|
+   | Cloudflare Account | the account whose domains this user will manage |
+   | Note | optional, e.g. "Shop owner - John" |
+   | Expiry | choose **7 days**, **30 days**, **Custom**, or **Permanent** |
+   | Permissions | tick what they can do (see table below) |
+   | Assigned Domains | tick the domains this code can access |
+   | Code Prefix | e.g. `USER`, `SHOP`, `VIP`. The code becomes `<PREFIX>-XXXXX` |
+
+4. Click **Create user**
+
+A toast appears with the generated code, for example:
+
+```
+Code generated: SHOP-K82P1
+```
+
+Use the **COPY** button next to any code to copy it. Send it to your user via
+your usual channel.
+
+### Permission cheat sheet
+
+| Permission | What the user can do |
+|---|---|
+| DNS Access | View, add, edit, delete DNS records, toggle proxy |
+| Email Routing | Enable/disable, manage forward rules, manage catch-all |
+| Domain Settings | Change SSL mode, Always HTTPS, purge cache |
+| Full Domain Access | All of the above + reserved Security tab |
+
+The user **cannot**:
+
+- see other domains
+- see your API token
+- delete a zone or remove the domain from Cloudflare
+- create more users
+
+### Regenerating a code
+
+On the Users page, click the refresh icon on a row.
+The old code is invalidated immediately and the user's existing session is
+logged out. A new code replaces it.
+
+---
+
+## 9. Use the panel as a user
+
+To test the user view:
+
+1. Open a different browser (or an Incognito window) and go to <http://localhost:3000/login>
+2. Paste the code (e.g. `SHOP-K82P1`) and click **Sign in**
+
+The user only sees:
+
+- the **Domains** they were assigned
+- the tabs that match their permissions
+- no Cloudflare Accounts, no Users, no Audit Logs
+
+Click on a domain. You will see:
+
+- **Overview** -> status, name servers, last edited, plus the setup checker (DNS / Email / SSL)
+- **DNS** *(if can_dns)* -> list of records, search, add/edit/delete, proxy toggle
+- **Email Routing** *(if can_email)* -> enable, catch-all, forward rules
+- **Domain Settings** *(if can_domain_settings)* -> SSL mode, Always HTTPS, cache purge
+- **Security** *(if can_full_access)* -> reserved for future expansion
+
+### DNS quick example
+
+1. On a domain, open the **DNS** tab
+2. Click **Add Record**
+3. Choose `A`, name `www`, content `203.0.113.10`, TTL `Auto` (`1`), proxy on
+4. Save
+
+The change is sent to Cloudflare directly and the audit log records it as
+`dns.create   example.com:A www`.
+
+---
+
+## 10. Email Routing
+
+Cloudflare Email Routing lets you forward `anything@yourdomain.com` to your
+real inbox without running a mail server.
+
+1. On a domain, open **Email Routing**
+2. Toggle **Enable Routing** on. The first time, Cloudflare will validate your
+   MX records. (If the toggle says routing is **pending**, give it a moment.)
+3. Add a forwarding rule:
+   - Match: `support@yourdomain.com`
+   - Forward to: `you@gmail.com`
+4. (Optional) Toggle **Catch-All** on and set a destination
+
+> **Important:** Cloudflare requires every destination address to be verified.
+> After you create the first rule, check your inbox for a verification email
+> from Cloudflare and click the link. Until you do, mail is dropped.
+
+---
+
+## 11. Domain Settings & Cache Purge
+
+On a domain, open **Domain Settings**:
+
+- **SSL Mode** -> click `flexible`, `full`, or `strict`. `strict` is the
+  recommended option if your origin has a valid certificate.
+- **Always Use HTTPS** -> toggle on so visitors are auto-redirected from HTTP.
+- **Cache Purge**:
+  - Paste one URL per line, then click **Purge URLs** to clear specific files.
+  - Or click **Purge Everything** to flush the whole zone (with a confirm dialog).
+
+Every change is captured in the audit log.
+
+---
+
+## 12. Audit log
+
+Click **Audit Logs** in the sidebar (admin only).
+
+You will see one row per mutation:
+
+```
+2026-05-26 02:15:12   admin          cf_account.create   Personal CF        127.0.0.1
+2026-05-26 02:18:33   SHOP-K82P1     dns.create          example.com:A www  203.0.113.5
+2026-05-26 02:19:01   SHOP-K82P1     email.enable        example.com        203.0.113.5
+```
+
+Filter by action (e.g. `dns.*`) or search by target / IP. Logs are kept until
+you delete them manually.
+
+---
+
+## 13. Deploy to production
+
+### 13.1 Set the production JWT secret (one-time)
 
 ```bash
 cd worker
 npx wrangler secret put JWT_SECRET
-# paste a long random string (e.g. `openssl rand -base64 48`) when prompted
+# paste a long random string when prompted, e.g.:
+#   openssl rand -base64 48
 cd ..
 ```
 
-### 2. Apply migrations to remote D1 (one-time per change)
+### 13.2 Apply migrations to remote D1 (one-time per change)
 
 ```bash
 npm run db:migrate:remote
 ```
 
-### 3. Deploy the worker
+### 13.3 Deploy the worker
 
 ```bash
 npm run deploy:worker
 ```
 
-Wrangler prints a URL like `https://cfp-worker.<subdomain>.workers.dev`. Save it.
+Wrangler prints a URL like `https://cfp-worker.<subdomain>.workers.dev`. Copy it.
 
-### 4. Update CORS allowlist on the worker
+### 13.4 Update CORS allowlist on the worker
 
 Edit `worker/wrangler.toml`:
 
@@ -263,7 +444,7 @@ Re-deploy:
 npm run deploy:worker
 ```
 
-### 5. Build & deploy the frontend
+### 13.5 Build & deploy the frontend
 
 Edit `web/.env.local` (and your hosting platform's env vars):
 
@@ -291,7 +472,7 @@ cd web
 npx vercel --prod
 ```
 
-### 6. Bootstrap the production admin
+### 13.6 Bootstrap the production admin
 
 ```bash
 curl -X POST https://cfp-worker.<subdomain>.workers.dev/api/admin/bootstrap \
@@ -301,9 +482,18 @@ curl -X POST https://cfp-worker.<subdomain>.workers.dev/api/admin/bootstrap \
 
 After that, change the password from **Settings -> Change Password** in the dashboard.
 
+### 13.7 Production checklist
+
+- [ ] `JWT_SECRET` set as a Workers secret (not a plain var)
+- [ ] `ALLOWED_ORIGINS` matches your frontend domain
+- [ ] D1 migrations applied with `--remote`
+- [ ] First admin created via `/admin/login` or curl bootstrap
+- [ ] Default admin password changed in **Settings -> Change Password**
+- [ ] All Cloudflare API tokens are scoped (no Global API Key)
+
 ---
 
-## Common commands
+## 14. Common commands
 
 ```bash
 # install + first-time setup
@@ -335,7 +525,37 @@ npx --workspace worker wrangler secret list
 
 ---
 
-## Reset / fix things
+## 15. Manual install (if `npm run setup` fails)
+
+Run these one by one if the wizard didn't work for you:
+
+```bash
+# 1. install
+npm install
+
+# 2. config files
+cp worker/wrangler.example.toml worker/wrangler.toml
+cp worker/.dev.vars.example worker/.dev.vars
+cp web/.env.example web/.env.local
+
+# 3. generate a JWT_SECRET
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+# copy the output, then edit worker/.dev.vars:
+#   JWT_SECRET = "<paste here>"
+
+# 4. create D1
+npx wrangler login
+npx --workspace worker wrangler d1 create cfp_db
+# copy the database_id from the output, then edit worker/wrangler.toml:
+#   database_id = "<paste here>"
+
+# 5. apply migrations
+npm run db:migrate:local
+```
+
+---
+
+## 16. Reset / fix things
 
 ### Forgot the admin password (local)
 
@@ -376,6 +596,44 @@ npx wrangler dev --port 8788
 echo 'NEXT_PUBLIC_API_URL=http://127.0.0.1:8788' > ../web/.env.local
 ```
 
+### "Cloudflare token invalid" when connecting an account
+
+- Make sure the token has all the scopes listed in [step 6](#6-get-a-cloudflare-api-token)
+- Tokens are case-sensitive, with no leading or trailing whitespace
+- Verify the token directly:
+  ```bash
+  curl -H "Authorization: Bearer YOUR_TOKEN" \
+       https://api.cloudflare.com/client/v4/user/tokens/verify
+  ```
+
+### "cf_account has no account_id; reconnect token"
+
+The token you used was zone-scoped without account read access, so we couldn't
+detect your account ID. Add **Account -> Email Routing Addresses -> Edit** to
+the token and re-create the connection in **Cloudflare Accounts**.
+
+### "code expired" on user login
+
+The expiry date passed. Edit the user, change expiry to **Permanent** (or
+extend it), and re-share the code. Or click the refresh icon to issue a brand
+new code.
+
+### `npx wrangler login` hangs
+
+Cancel with `Ctrl+C`, then run:
+
+```bash
+npx wrangler logout
+npx wrangler login
+```
+
+If you're on a headless server, use an API token from
+<https://dash.cloudflare.com/profile/api-tokens> and export it:
+
+```bash
+export CLOUDFLARE_API_TOKEN=your_token_here
+```
+
 ### Inspect the database directly
 
 ```bash
@@ -403,7 +661,7 @@ npx --workspace worker wrangler tail
 
 ---
 
-## Repository Layout
+## 17. Repository Layout
 
 ```
 SaaS-Cloudflare/
@@ -434,34 +692,12 @@ SaaS-Cloudflare/
 │   └── lib/api.ts              typed fetch client + auth storage
 ├── shared/types.ts             shared TypeScript types
 ├── scripts/                    setup.mjs, dev.mjs (cross-platform)
-├── README.md                   this file
-└── TUTORIAL.md                 step-by-step walkthrough
+└── README.md                   this file
 ```
 
 ---
 
-## Cloudflare API token scopes
-
-When connecting a Cloudflare account, the token must have:
-
-| Resource | Permission |
-|---|---|
-| Zone -> Zone | Read |
-| Zone -> DNS | Edit |
-| Zone -> Email Routing Rules | Edit |
-| Zone -> Email Routing Addresses | Edit |
-| Zone -> Zone Settings | Edit |
-| Zone -> Cache Purge | Purge |
-| Account -> Email Routing Addresses | Edit |
-
-Zone Resources: **All zones** (or specific ones).
-Account Resources: **your account** (needed for email destinations).
-
-The token is stored in D1 and is **never** returned to the frontend.
-
----
-
-## Security Model
+## 18. Security Model
 
 - Passwords hashed with **PBKDF2-SHA-256** (210,000 iterations) via Web Crypto
 - Sessions are signed JWTs (HS256) using `JWT_SECRET` (random per install)
@@ -470,8 +706,16 @@ The token is stored in D1 and is **never** returned to the frontend.
 - Per-request authorization checks domain ownership AND permission flags
 - Every mutation is written to `audit_logs` with actor, action, target, and IP
 
+### What the user cannot do
+
+- See other users' domains
+- See API tokens or password hashes
+- Remove a domain from Cloudflare or disconnect an account
+- Create more users
+- View the audit log
+
 ---
 
-## License
+## 19. License
 
 MIT
