@@ -9,13 +9,18 @@
     "shared"
   ],
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
     "dev:worker": "npm --workspace worker run dev",
     "dev:web": "npm --workspace web run dev",
-    "deploy:worker": "npm --workspace worker run deploy",
     "build:web": "npm --workspace web run build",
+    "deploy:worker": "npm --workspace worker run deploy",
+    "deploy": "npm run deploy:worker && npm run build:web",
     "db:migrate:local": "npm --workspace worker run db:migrate:local",
     "db:migrate:remote": "npm --workspace worker run db:migrate:remote",
-    "db:seed:local": "npm --workspace worker run db:seed:local"
+    "db:seed:local": "npm --workspace worker run db:seed:local",
+    "db:seed:remote": "npm --workspace worker run db:seed:remote",
+    "db:create": "npx --workspace worker wrangler d1 create cfp_db"
   },
   "engines": {
     "node": ">=20"
