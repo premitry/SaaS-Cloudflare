@@ -1,24 +1,24 @@
 # Cloudflare Domain Management Panel
 
-A SaaS-style dashboard for managing Cloudflare zones across **multiple Cloudflare accounts** and **multiple users**, with granular per-domain permissions, DNS management, Email Routing, and audit logging.
+Multi-account, multi-user Cloudflare dashboard with per-domain permissions, DNS management, Email Routing, and audit logging.
 
-> **Single Cloudflare Worker** serves both the dashboard UI (Vite + React) and the JSON API (Hono + D1). One `wrangler deploy` and your panel is live at `https://cfp-worker.<your-subdomain>.workers.dev`.
+> **Single Cloudflare Worker** serves both the dashboard UI **and** the JSON API on the same URL. One `wrangler deploy` and your panel is live at `https://cfp-worker.<your-subdomain>.workers.dev`. No Pages, no Vercel, no separate hosting.
 
 ---
 
 ## Features
 
 - Admin login (username + password, hashed with PBKDF2-SHA-256)
-- User login by **CODE** (temporary 1d / 7d / 30d / custom or permanent)
+- User login by **CODE** (1d / 7d / 30d / custom / permanent)
 - Connect **multiple Cloudflare accounts** with scoped API tokens
 - Domains stay inside the admin's Cloudflare accounts
 - Per-user **domain assignment** with checkbox + search
 - Permission flags: DNS / Email Routing / Domain Settings / Full Access
 - DNS records CRUD with proxy toggle
-- Email Routing: enable/disable, catch-all, forward rules, destinations
+- Email Routing: enable/disable, catch-all, forward rules
 - Domain Settings: SSL mode, Always HTTPS, Cache Purge
 - Setup checker (DNS / Email / SSL)
-- Audit logs (every mutation, with IP)
+- Audit log for every mutation, with IP
 - Session revocation (regenerating a code logs the user out everywhere)
 - Dark mode UI inspired by Cloudflare / GitHub / Vercel
 
@@ -26,45 +26,55 @@ A SaaS-style dashboard for managing Cloudflare zones across **multiple Cloudflar
 
 ## Table of Contents
 
-1. [Quick Start](#1-quick-start)
+1. [Install (one flow)](#1-install-one-flow)
 2. [Requirements](#2-requirements)
-3. [Architecture](#3-architecture)
-4. [Local development](#4-local-development)
-5. [Deploy to Cloudflare](#5-deploy-to-cloudflare)
-6. [First admin login](#6-first-admin-login)
-7. [Connect a Cloudflare account](#7-connect-a-cloudflare-account)
-8. [Create a user code](#8-create-a-user-code)
-9. [Cloudflare API token scopes](#9-cloudflare-api-token-scopes)
-10. [Common commands](#10-common-commands)
-11. [Reset / fix things](#11-reset--fix-things)
-12. [Repository Layout](#12-repository-layout)
-13. [Security Model](#13-security-model)
-14. [License](#14-license)
+3. [What `npm run deploy:setup` does](#3-what-npm-run-deploysetup-does)
+4. [First admin login](#4-first-admin-login)
+5. [Connect a Cloudflare account](#5-connect-a-cloudflare-account)
+6. [Create a user code](#6-create-a-user-code)
+7. [Cloudflare API token scopes](#7-cloudflare-api-token-scopes)
+8. [Re-deploy after code changes](#8-re-deploy-after-code-changes)
+9. [Common commands](#9-common-commands)
+10. [Reset / fix things](#10-reset--fix-things)
+11. [Local development (optional)](#11-local-development-optional)
+12. [Architecture](#12-architecture)
+13. [Repository Layout](#13-repository-layout)
+14. [Security Model](#14-security-model)
+15. [License](#15-license)
 
 ---
 
-## 1. Quick Start
+## 1. Install (one flow)
+
+Everything below runs from your laptop. The end result is a live dashboard at
+`https://cfp-worker.<your-subdomain>.workers.dev`.
 
 ```bash
 git clone https://github.com/premitry/SaaS-Cloudflare.git
 cd SaaS-Cloudflare
 
-npx wrangler login          # one-time
-npm run setup               # install + D1 + JWT + migrations + build dashboard
-npm run deploy:setup        # remote migrations + secret + wrangler deploy + admin
+npx wrangler login          # one-time: opens browser to authorise wrangler
+npm run setup               # install deps, create D1, generate JWT, build UI
+npm run deploy:setup        # remote migrations + Workers secret + wrangler deploy + bootstrap admin
 ```
 
-Open `https://cfp-worker.<your-subdomain>.workers.dev`. The dashboard loads.
-Click **Admin login**, sign in with the credentials you created during
-`deploy:setup`. Done.
+Open the URL printed at the end (e.g. `https://cfp-worker.julianspes.workers.dev`).
+The dashboard loads. Click **Admin login** and sign in with the credentials
+you just created. Done.
 
-For local development before deploying, see [section 4](#4-local-development).
+> If you already ran `deploy:setup` once and only want to push new code:
+>
+> ```bash
+> npm run deploy
+> ```
+>
+> That builds the dashboard and runs `wrangler deploy`.
 
 ---
 
 ## 2. Requirements
 
-| Tool | Min version | Check command |
+| Tool | Min version | Check |
 |---|---|---|
 | Node.js | 20 | `node --version` |
 | npm | 10 | `npm --version` |
@@ -73,7 +83,7 @@ For local development before deploying, see [section 4](#4-local-development).
 
 You also need at least one domain added to Cloudflare (any plan, free is fine).
 
-If you don't have Node 20+, install via nvm:
+If you don't have Node 20+:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
@@ -83,109 +93,36 @@ nvm use 20
 
 ---
 
-## 3. Architecture
+## 3. What `npm run deploy:setup` does
 
-```
-                  https://cfp-worker.<sub>.workers.dev
-                                |
-                  +-------------+-------------+
-                  |   Cloudflare Worker       |
-                  |                           |
-   /              | -> [assets] binding ----> | -> web/dist (React SPA)
-   /assets/*.js   |                           |
-   /favicon.ico   |                           |
-   /api/*         | -> Hono routes ---------> | -> D1 (cfp_db)
-   /health        |                           |
-   /domains/...   | -> SPA fallback --------> | -> index.html (client routing)
-                  +---------------------------+
-```
+The wizard runs these steps for you, with output showing the underlying
+`wrangler` commands at each step:
 
-- **One Worker. One URL. One deploy.**
-- The frontend is a static Vite + React SPA, built once and served via the
-  Worker's `[assets]` binding.
-- The same Worker handles `/api/*` against a D1 database.
-- Client-side React Router takes care of `/dashboard`, `/domains/42`, etc.
-  through SPA fallback in the Worker's `notFound` handler.
-
----
-
-## 4. Local development
-
-```bash
-npm run dev
-```
-
-This starts two dev servers in parallel:
-
-| Server | URL | Notes |
+| Step | Underlying command | Purpose |
 |---|---|---|
-| Vite | <http://localhost:5173> | hot-reload UI; `/api/*` proxied to the worker |
-| Wrangler | <http://127.0.0.1:8787> | the Worker (API + already-built `web/dist`) |
+| 1 | `npx wrangler whoami` | confirm you are logged in |
+| 2 | (read `worker/wrangler.toml`) | confirm a real D1 `database_id` is set |
+| 3 | `npx wrangler d1 migrations apply cfp_db --remote` | create panel tables in your D1 |
+| 4 | `npx wrangler secret put JWT_SECRET` | store a strong random secret on the Worker |
+| 5 | `npm --workspace web run build` | build the dashboard into `web/dist/` |
+| 6 | **`npx wrangler deploy`** | upload Worker code + `web/dist/` (assets) |
+| 7 | `POST /api/admin/bootstrap` | create the first admin (asks you for username + password) |
 
-For day-to-day UI work, open <http://localhost:5173>.
-To exercise the production-like single-URL setup, open <http://127.0.0.1:8787>
-(remember to `npm run build` after UI changes if you use this URL).
-
-Stop both with `Ctrl+C`.
+If any step fails, the wizard tells you which command to run manually.
 
 ---
 
-## 5. Deploy to Cloudflare
+## 4. First admin login
 
-### 5.1 First time: `npm run deploy:setup`
+1. Open your worker URL printed by step 6 (e.g. `https://cfp-worker.<sub>.workers.dev`)
+2. Click **Admin login** (or go to `/admin/login`)
+3. Type a username and a password of at least 8 characters
+4. Click **Sign in**
 
-```bash
-npx wrangler login          # if you haven't already
-npm run deploy:setup
-```
+> On an empty database the first credentials you submit become the initial
+> admin account. Choose a strong password.
 
-What the script does:
-
-| Step | What happens |
-|---|---|
-| 1 | `wrangler whoami` |
-| 2 | Verifies `worker/wrangler.toml` has a real D1 `database_id` |
-| 3 | `wrangler d1 migrations apply cfp_db --remote` |
-| 4 | Generates a strong random `JWT_SECRET` and stores it as a Workers secret |
-| 5 | `npm run build` (Vite -> `web/dist`) |
-| 6 | `wrangler deploy` (uploads worker code + `web/dist` as `[assets]`) |
-| 7 | `POST /api/admin/bootstrap` to create the first admin |
-
-When it finishes you have one URL like
-`https://cfp-worker.<subdomain>.workers.dev`. Open it -> you see the dashboard.
-
-### 5.2 Re-deploy after code changes
-
-```bash
-npm run deploy              # = npm run build && wrangler deploy
-```
-
-Or if only the worker code changed (no UI changes):
-
-```bash
-npm run deploy:worker       # alias of `wrangler deploy`
-```
-
-### 5.3 Manual deploy (no wizard)
-
-```bash
-# 1. (one-time) JWT_SECRET as a Workers secret
-cd worker
-npx wrangler secret put JWT_SECRET
-cd ..
-
-# 2. (one-time) remote migrations
-npm run db:migrate:remote
-
-# 3. build dashboard + deploy
-npm run build
-cd worker
-npx wrangler deploy
-```
-
-You will see the worker URL printed at the end of `wrangler deploy`.
-
-### 5.4 Bootstrap admin if you skipped the wizard
+If you skipped the bootstrap during the wizard, you can also do it via curl:
 
 ```bash
 curl -X POST https://cfp-worker.<sub>.workers.dev/api/admin/bootstrap \
@@ -195,53 +132,40 @@ curl -X POST https://cfp-worker.<sub>.workers.dev/api/admin/bootstrap \
 
 ---
 
-## 6. First admin login
-
-1. Open your worker URL (e.g. `https://cfp-worker.<sub>.workers.dev`)
-2. Click **Admin login** (or go to `/admin/login`)
-3. Type a username and a password of at least 8 characters
-4. Click **Sign in**
-
-> On an empty database the first credentials you submit become the initial
-> admin account. Choose a strong password.
-
----
-
-## 7. Connect a Cloudflare account
+## 5. Connect a Cloudflare account
 
 1. Create a scoped API token at <https://dash.cloudflare.com/profile/api-tokens>
-   (see [section 9](#9-cloudflare-api-token-scopes))
+   (see [section 7](#7-cloudflare-api-token-scopes))
 2. In the panel, open **Cloudflare Accounts** -> **Connect Account**
 3. Paste the token and click **Connect**
 
 The panel verifies the token, captures your account ID, and syncs every zone
-into the local database.
+into D1. You can connect multiple Cloudflare accounts; each one keeps its own
+domains, users, and audit log.
 
-You can also test the token quickly:
+You can also test the token before pasting:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" \
   https://api.cloudflare.com/client/v4/user/tokens/verify
 ```
 
-> **Tip:** You can connect multiple Cloudflare accounts. Each one keeps its own
-> domains, users, and audit log.
-
 ---
 
-## 8. Create a user code
+## 6. Create a user code
 
-In the panel:
+Users authenticate with a CODE, not a password. Each code is tied to one
+Cloudflare account and a list of domains.
 
 1. **Users** -> **Add User**
 2. Pick a Cloudflare account, set expiry (1d / 7d / 30d / custom / permanent)
-3. Tick the **permissions** (DNS / Email Routing / Domain Settings / Full Access)
+3. Tick the **permissions**
 4. Tick the **domains** the code may access
 5. Click **Create user** -> the generated code (e.g. `SHOP-K82P1`) appears
 
-Share the code with your user. They log in at `/login`.
+Share the code. The user logs in at `/login` on your worker URL.
 
-To rotate a user's code (which logs them out instantly): click the refresh
+To rotate a user's code (which logs them out instantly), click the refresh
 icon on their row.
 
 ### Permission cheat sheet
@@ -255,9 +179,9 @@ icon on their row.
 
 ---
 
-## 9. Cloudflare API token scopes
+## 7. Cloudflare API token scopes
 
-When connecting a Cloudflare account, the token must have:
+When connecting a Cloudflare account, the token needs:
 
 | Resource | Permission |
 |---|---|
@@ -276,52 +200,71 @@ The token is stored in D1 and is **never** returned to the frontend.
 
 ---
 
-## 10. Common commands
+## 8. Re-deploy after code changes
+
+After you edit any file in `worker/src/` or `web/src/`:
 
 ```bash
-# install + first-time local setup
+npm run deploy
+```
+
+Equivalent to:
+
+```bash
+npm --workspace web run build      # rebuild dashboard -> web/dist
+npx --workspace worker wrangler deploy
+```
+
+The Cloudflare CLI uploads both the Worker code and the static assets in one
+shot, then prints the URL.
+
+If you only changed worker code (no UI changes), you can skip the build:
+
+```bash
+npm run deploy:worker     # = npx --workspace worker wrangler deploy
+```
+
+---
+
+## 9. Common commands
+
+```bash
+# install + first-time prep (deps, D1, JWT, migrations, build)
 npm run setup
 
-# dev (worker on 8787 + vite UI on 5173, hot reload)
-npm run dev
-npm run dev:worker          # worker only
-npm run dev:web             # vite only
-
-# build dashboard for production
-npm run build
+# deploy (production = Cloudflare Workers)
+npm run deploy:setup        # one-time guided setup
+npm run deploy              # build + wrangler deploy
+npm run deploy:worker       # wrangler deploy only
 
 # database
 npm run db:create           # alias for `wrangler d1 create cfp_db`
-npm run db:migrate:local
-npm run db:migrate:remote
-
-# deploy
-npm run deploy:setup        # guided one-time prod setup (secret + admin + deploy)
-npm run deploy              # build + wrangler deploy
-npm run deploy:worker       # wrangler deploy only (no rebuild)
+npm run db:migrate:remote   # apply migrations to production D1
+npm run db:migrate:local    # apply migrations to local dev D1
 
 # direct wrangler
 npx --workspace worker wrangler tail
-npx --workspace worker wrangler d1 execute cfp_db --remote --command="SELECT * FROM admins"
+npx --workspace worker wrangler d1 execute cfp_db --remote \
+  --command="SELECT * FROM admins"
 npx --workspace worker wrangler secret put JWT_SECRET
 npx --workspace worker wrangler secret list
 ```
 
 ---
 
-## 11. Reset / fix things
+## 10. Reset / fix things
 
-### I open the worker URL and see `{"ok":true,"data":{"name":"cfp-worker"...}}` instead of the dashboard
+### I open the URL and see `{"ok":true,"data":{"name":"cfp-worker"...}}` instead of the dashboard
 
-That means the dashboard wasn't built before the deploy. Fix:
+The dashboard wasn't built before the deploy. Fix:
 
 ```bash
-npm run build
-cd worker
-npx wrangler deploy
+npm run deploy
 ```
 
-### Forgot the admin password (production)
+(That runs `npm run build` then `wrangler deploy`.)
+
+### Forgot the admin password
 
 ```bash
 npx --workspace worker wrangler d1 execute cfp_db --remote \
@@ -330,28 +273,14 @@ npx --workspace worker wrangler d1 execute cfp_db --remote \
 
 Then visit `/admin/login` and submit new credentials -> they become the new admin.
 
-### Forgot the admin password (local)
-
-```bash
-npx --workspace worker wrangler d1 execute cfp_db --local \
-  --command="DELETE FROM admins WHERE username='admin';"
-```
-
-### Wipe local DB and start over
-
-```bash
-rm -rf worker/.wrangler
-npm run db:migrate:local
-```
-
 ### Frontend stuck in unauthorized loop
 
-DevTools -> Application -> Local Storage -> remove `cfp_token` and `cfp_actor`,
-then refresh.
+Open DevTools -> Application -> Local Storage -> remove `cfp_token` and
+`cfp_actor`, then refresh.
 
 ### Debug what the worker can see (no secrets exposed)
 
-Open `https://<your-worker-url>/api/_diag`. Expected shape:
+Open `https://<your-worker-url>/api/_diag`. Expected:
 
 ```json
 {
@@ -366,11 +295,26 @@ Open `https://<your-worker-url>/api/_diag`. Expected shape:
 }
 ```
 
-If `has_jwt_secret: false`, run `npx wrangler secret put JWT_SECRET` (production)
-or rerun `npm run setup` (local).
-If `db_ready: false`, run `npm run db:migrate:remote` (or `:local`).
-If `has_assets: false`, the dashboard hasn't been built/uploaded yet:
-`npm run build && npm run deploy:worker`.
+| Field is `false` | Fix |
+|---|---|
+| `has_jwt_secret` | `npx --workspace worker wrangler secret put JWT_SECRET` |
+| `db_ready` | `npm run db:migrate:remote` |
+| `has_assets` | `npm run deploy` (rebuilds + redeploys with the dashboard) |
+
+### "Cloudflare token invalid" when connecting an account
+
+- Make sure the token has all the scopes in [section 7](#7-cloudflare-api-token-scopes)
+- Tokens are case-sensitive, with no leading or trailing whitespace
+- Verify the token directly:
+  ```bash
+  curl -H "Authorization: Bearer YOUR_TOKEN" \
+    https://api.cloudflare.com/client/v4/user/tokens/verify
+  ```
+
+### "code expired" on user login
+
+The expiry date passed. Edit the user, change expiry to **Permanent** (or
+extend it). Or click the refresh icon to issue a new code.
 
 ### Tail production logs
 
@@ -380,65 +324,109 @@ npx --workspace worker wrangler tail
 
 ---
 
-## 12. Repository Layout
+## 11. Local development (optional)
+
+You don't need this to use the panel - `npm run deploy` is enough. But if you
+want to develop with hot reload before deploying:
+
+```bash
+npm run dev
+```
+
+This runs two dev servers in parallel:
+
+| Server | URL | Notes |
+|---|---|---|
+| Vite | <http://localhost:5173> | hot-reload UI; `/api/*` proxied to the worker |
+| Wrangler | <http://127.0.0.1:8787> | Worker (API + last built `web/dist`) |
+
+For day-to-day UI work, open <http://localhost:5173>.
+Stop both with `Ctrl+C`.
+
+When you're happy, deploy:
+
+```bash
+npm run deploy
+```
+
+---
+
+## 12. Architecture
+
+```
+                  https://cfp-worker.<sub>.workers.dev
+                                |
+                  +-------------+-------------+
+                  |   Cloudflare Worker       |
+                  |                           |
+   /              | -> [assets] binding ----> | -> web/dist (React SPA)
+   /assets/*.js   |                           |
+   /api/*         | -> Hono routes ---------> | -> D1 (cfp_db)
+   /health        |                           |
+   /domains/...   | -> SPA fallback --------> | -> index.html (client routing)
+                  +---------------------------+
+```
+
+- **One Worker. One URL. One `wrangler deploy`.**
+- Frontend is a static Vite + React SPA, built once into `web/dist/` and
+  served via the Worker's `[assets]` binding.
+- The same Worker handles `/api/*` against a D1 database.
+- Client-side React Router takes care of `/dashboard`, `/domains/42`, etc.
+  through SPA fallback in the Worker's `notFound` handler.
+
+---
+
+## 13. Repository Layout
 
 ```
 SaaS-Cloudflare/
-├── worker/              # Cloudflare Workers backend (Hono + D1)
+├── worker/              # Cloudflare Workers backend
 │   ├── src/
 │   │   ├── index.ts            # entrypoint: API routes + SPA fallback
 │   │   ├── auth.ts             # PBKDF2 + JWT
 │   │   ├── middleware.ts       # CORS, auth, permissions
 │   │   ├── cloudflare.ts       # CF API client
 │   │   ├── audit.ts            # audit log writer
-│   │   └── routes/             # auth, cf-accounts, users, domains, dns,
-│   │                           #   email-routing, settings, audit-logs
+│   │   └── routes/             # auth, cf-accounts, users, domains,
+│   │                           #   dns, email-routing, settings, audit-logs
 │   ├── migrations/0001_init.sql
 │   └── wrangler.toml           # also configures [assets] = ../web/dist
 ├── web/                 # Vite + React + React Router (static SPA)
 │   ├── index.html
 │   ├── vite.config.ts
-│   ├── src/
-│   │   ├── main.tsx            # BrowserRouter + ToastProvider
-│   │   ├── App.tsx             # Routes
-│   │   ├── pages/              # Login, AdminLogin, Dashboard,
-│   │   │                       #   CloudflareAccounts, Users, AuditLogs,
-│   │   │                       #   SettingsPage, Domains,
-│   │   │                       #   DomainLayout / DomainOverview /
-│   │   │                       #   DomainDNS / DomainEmailRouting /
-│   │   │                       #   DomainSettingsPage / DomainSecurity
-│   │   ├── components/         # Sidebar, Modal, Toggle, CopyButton, Toast, Icon, Spinner
-│   │   ├── lib/api.ts          # typed fetch client + auth storage
-│   │   └── lib/format.ts
-│   └── dist/                   # build output (served by worker [assets])
+│   └── src/
+│       ├── main.tsx            # BrowserRouter + ToastProvider
+│       ├── App.tsx             # Routes
+│       ├── pages/              # Login, AdminLogin, Dashboard,
+│       │                       #   CloudflareAccounts, Users, AuditLogs,
+│       │                       #   SettingsPage, Domains, DomainLayout,
+│       │                       #   DomainOverview, DomainDNS,
+│       │                       #   DomainEmailRouting, DomainSettingsPage,
+│       │                       #   DomainSecurity
+│       ├── components/         # Sidebar, Modal, Toggle, CopyButton,
+│       │                       #   Toast, Icon, Spinner
+│       └── lib/                # api.ts, format.ts
 ├── scripts/
 │   ├── setup.mjs               # one-shot local install
-│   ├── dev.mjs                 # parallel worker + vite
+│   ├── dev.mjs                 # parallel worker + vite (optional)
 │   └── deploy.mjs              # guided production deploy
 └── README.md
 ```
 
 ---
 
-## 13. Security Model
+## 14. Security Model
 
 - Passwords hashed with **PBKDF2-SHA-256** (210,000 iterations) via Web Crypto
 - Sessions are signed JWTs (HS256) using `JWT_SECRET` (random per install)
-- User JWT is bound to `login_code` -> regenerating a code instantly invalidates all old tokens
+- User JWT is bound to `login_code` -> regenerating a code instantly
+  invalidates all old tokens
 - The frontend never sees Cloudflare API tokens or password hashes
 - Per-request authorization checks domain ownership AND permission flags
 - Every mutation is written to `audit_logs` with actor, action, target, and IP
 
-### What the user cannot do
-
-- See other users' domains
-- See API tokens or password hashes
-- Remove a domain from Cloudflare or disconnect an account
-- Create more users
-- View the audit log
-
 ---
 
-## 14. License
+## 15. License
 
 MIT
