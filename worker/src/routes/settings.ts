@@ -30,8 +30,8 @@ settingsRoutes.get("/:id/settings", async (c) => {
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
     const [ssl, alwaysHttps] = await Promise.all([
-      getZoneSetting(acc.api_token, acc.zone_id, "ssl").catch(() => null),
-      getZoneSetting(acc.api_token, acc.zone_id, "always_use_https").catch(() => null),
+      getZoneSetting(acc.auth, acc.zone_id, "ssl").catch(() => null),
+      getZoneSetting(acc.auth, acc.zone_id, "always_use_https").catch(() => null),
     ]);
     return c.json(
       jsonOk({
@@ -56,12 +56,12 @@ settingsRoutes.patch("/:id/settings", async (c) => {
     .catch(() => ({}));
   try {
     if (body.ssl) {
-      await patchZoneSetting(acc.api_token, acc.zone_id, "ssl", body.ssl);
+      await patchZoneSetting(acc.auth, acc.zone_id, "ssl", body.ssl);
       await audit(c, "settings.ssl.update", `${acc.domain}=${body.ssl}`, acc.cf_account_id);
     }
     if (body.always_use_https) {
       await patchZoneSetting(
-        acc.api_token,
+        acc.auth,
         acc.zone_id,
         "always_use_https",
         body.always_use_https
@@ -94,7 +94,7 @@ settingsRoutes.post("/:id/cache-purge", async (c) => {
       ? { files: body.files }
       : { purge_everything: true };
   try {
-    const r = await purgeCache(acc.api_token, acc.zone_id, payload);
+    const r = await purgeCache(acc.auth, acc.zone_id, payload);
     await audit(
       c,
       "settings.cache_purge",

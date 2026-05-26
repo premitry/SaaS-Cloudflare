@@ -78,10 +78,10 @@ domainsRoutes.get("/:id/overview", async (c) => {
   };
   try {
     const [zone, records, routing] = await Promise.all([
-      getZone(acc.api_token, acc.zone_id).catch(() => null),
-      listDnsRecords(acc.api_token, acc.zone_id).catch(() => [] as never),
+      getZone(acc.auth, acc.zone_id).catch(() => null),
+      listDnsRecords(acc.auth, acc.zone_id).catch(() => [] as never),
       acc.perms.can_email
-        ? getRoutingSettings(acc.api_token, acc.zone_id).catch(() => null)
+        ? getRoutingSettings(acc.auth, acc.zone_id).catch(() => null)
         : Promise.resolve(null),
     ]);
     out.zone = zone;
@@ -108,7 +108,7 @@ domainsRoutes.get("/:id/setup-check", async (c) => {
     ssl: { ssl_active: false, https_enabled: false },
   };
   try {
-    const records = (await listDnsRecords(acc.api_token, acc.zone_id)) as Array<{
+    const records = (await listDnsRecords(acc.auth, acc.zone_id)) as Array<{
       type: string;
       content: string;
     }>;
@@ -121,14 +121,14 @@ domainsRoutes.get("/:id/setup-check", async (c) => {
     /* ignore */
   }
   try {
-    const r = (await getRoutingSettings(acc.api_token, acc.zone_id)) as {
+    const r = (await getRoutingSettings(acc.auth, acc.zone_id)) as {
       enabled?: boolean;
       status?: string;
     };
     out.email.routing_enabled = !!r?.enabled || r?.status === "ready";
     if (out.email.routing_enabled) {
       const cfMod = await import("../cloudflare");
-      const ca = (await cfMod.getCatchAllRule(acc.api_token, acc.zone_id).catch(
+      const ca = (await cfMod.getCatchAllRule(acc.auth, acc.zone_id).catch(
         () => null
       )) as { enabled?: boolean } | null;
       out.email.catch_all_enabled = !!ca?.enabled;
@@ -139,11 +139,11 @@ domainsRoutes.get("/:id/setup-check", async (c) => {
   try {
     const cfMod = await import("../cloudflare");
     const ssl = (await cfMod
-      .getZoneSetting(acc.api_token, acc.zone_id, "ssl")
+      .getZoneSetting(acc.auth, acc.zone_id, "ssl")
       .catch(() => null)) as { value?: string } | null;
     out.ssl.ssl_active = !!ssl?.value && ssl.value !== "off";
     const ahttps = (await cfMod
-      .getZoneSetting(acc.api_token, acc.zone_id, "always_use_https")
+      .getZoneSetting(acc.auth, acc.zone_id, "always_use_https")
       .catch(() => null)) as { value?: string } | null;
     out.ssl.https_enabled = ahttps?.value === "on";
   } catch {

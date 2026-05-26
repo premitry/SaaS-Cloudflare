@@ -32,7 +32,7 @@ dnsRoutes.get("/:id/dns", async (c) => {
   const need = requirePerm(acc, "can_dns");
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
-    const records = await listDnsRecords(acc.api_token, acc.zone_id);
+    const records = await listDnsRecords(acc.auth, acc.zone_id);
     return c.json(jsonOk(records));
   } catch (e) {
     const err = handleCfError(e);
@@ -49,7 +49,7 @@ dnsRoutes.post("/:id/dns", async (c) => {
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   const body = await c.req.json().catch(() => ({}));
   try {
-    const created = await createDnsRecord(acc.api_token, acc.zone_id, body);
+    const created = await createDnsRecord(acc.auth, acc.zone_id, body);
     await audit(
       c,
       "dns.create",
@@ -74,7 +74,7 @@ dnsRoutes.put("/:id/dns/:recordId", async (c) => {
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   const body = await c.req.json().catch(() => ({}));
   try {
-    const updated = await updateDnsRecord(acc.api_token, acc.zone_id, recordId, body);
+    const updated = await updateDnsRecord(acc.auth, acc.zone_id, recordId, body);
     await audit(c, "dns.update", `${acc.domain}:${recordId}`, acc.cf_account_id);
     return c.json(jsonOk(updated));
   } catch (e) {
@@ -91,7 +91,7 @@ dnsRoutes.delete("/:id/dns/:recordId", async (c) => {
   const need = requirePerm(acc, "can_dns");
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
-    const r = await deleteDnsRecord(acc.api_token, acc.zone_id, recordId);
+    const r = await deleteDnsRecord(acc.auth, acc.zone_id, recordId);
     await audit(c, "dns.delete", `${acc.domain}:${recordId}`, acc.cf_account_id);
     return c.json(jsonOk(r));
   } catch (e) {

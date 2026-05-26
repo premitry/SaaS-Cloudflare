@@ -2,12 +2,12 @@
 
 import type { Context, Next } from "hono";
 import { verifyJwt } from "./auth";
+import { authFromRow, type CfAuth } from "./cloudflare";
 import type { Env, Variables, Actor } from "./types";
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
 export async function corsMw(c: Ctx, next: Next) {
-  // Default: allow any origin in dev. Production should pin this in wrangler.toml.
   const allow = (c.env.ALLOWED_ORIGINS ?? "*").trim();
   const origin = c.req.header("Origin") ?? "";
   let allowed = false;
@@ -22,7 +22,6 @@ export async function corsMw(c: Ctx, next: Next) {
       allowOriginHeader = origin;
     }
   }
-
   const headers: Record<string, string> = {
     "Access-Control-Allow-Headers": "Authorization,Content-Type",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -30,7 +29,6 @@ export async function corsMw(c: Ctx, next: Next) {
     Vary: "Origin",
   };
   if (allowed) headers["Access-Control-Allow-Origin"] = allowOriginHeader;
-
   if (c.req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers });
   }
@@ -56,7 +54,6 @@ async function loadActor(c: Ctx): Promise<Actor | null> {
     if (!row) return null;
     return { type: "admin", id: row.id, username: row.username };
   }
-  // user
   const row = await c.env.DB.prepare(
     `SELECT id, cf_account_id, login_code, expired_at, is_permanent
        FROM users WHERE id = ?`
@@ -70,9 +67,7 @@ async function loadActor(c: Ctx): Promise<Actor | null> {
       is_permanent: number;
     }>();
   if (!row) return null;
-  // session is bound to login_code; regenerating logs out
   if (row.login_code !== payload.code) return null;
-  // expiry
   if (!row.is_permanent && row.expired_at) {
     const exp = new Date(row.expired_at.replace(" ", "T") + "Z").getTime();
     if (exp < Date.now()) return null;
@@ -87,9 +82,7 @@ async function loadActor(c: Ctx): Promise<Actor | null> {
 
 export async function authMw(c: Ctx, next: Next) {
   const actor = await loadActor(c);
-  if (!actor) {
-    return c.json({ ok: false, error: "unauthorized" }, 401);
-  }
+  if (!actor) return c.json({ ok: false, error: "unauthorized" }, 401);
   c.set("actor", actor);
   await next();
 }
@@ -116,7 +109,7 @@ export type DomainAccess = {
   zone_id: string;
   domain: string;
   cf_account_id: number;
-  api_token: string;
+  auth: CfAuth;                          // ready-to-use credentials
   cf_account_external_id: string | null;
   perms: {
     can_dns: boolean;
@@ -135,7 +128,8 @@ export async function resolveDomainAccess(
 
   const dom = await c.env.DB.prepare(
     `SELECT d.id AS domain_id, d.zone_id, d.domain, d.cf_account_id,
-            a.api_token, a.account_id AS cf_account_external_id
+            a.api_type, a.api_token, a.email AS cf_email,
+            a.account_id AS cf_account_external_id
        FROM domains d
        JOIN cf_accounts a ON a.id = d.cf_account_id
       WHERE d.id = ?`
@@ -146,14 +140,39 @@ export async function resolveDomainAccess(
       zone_id: string;
       domain: string;
       cf_account_id: number;
+      api_type: string | null;
       api_token: string;
+      cf_email: string | null;
       cf_account_external_id: string | null;
     }>();
   if (!dom) return { error: "domain not found", status: 404 };
 
+  let auth: CfAuth;
+  try {
+    auth = authFromRow({
+      api_type: dom.api_type,
+      api_token: dom.api_token,
+      email: dom.cf_email,
+    });
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "credentials misconfigured",
+      status: 500,
+    };
+  }
+
+  const base = {
+    domain_id: dom.domain_id,
+    zone_id: dom.zone_id,
+    domain: dom.domain,
+    cf_account_id: dom.cf_account_id,
+    auth,
+    cf_account_external_id: dom.cf_account_external_id,
+  };
+
   if (actor.type === "admin") {
     return {
-      ...dom,
+      ...base,
       perms: {
         can_dns: true,
         can_email: true,
@@ -183,7 +202,7 @@ export async function resolveDomainAccess(
       can_full_access: number;
     }>();
   return {
-    ...dom,
+    ...base,
     perms: {
       can_dns: !!(perms?.can_full_access || perms?.can_dns),
       can_email: !!(perms?.can_full_access || perms?.can_email),

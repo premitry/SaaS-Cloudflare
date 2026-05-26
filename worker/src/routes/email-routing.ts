@@ -36,9 +36,9 @@ emailRoutes.get("/:id/email-routing", async (c) => {
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
     const [settings, rules, catchAll] = await Promise.all([
-      getRoutingSettings(acc.api_token, acc.zone_id).catch(() => null),
-      listRoutingRules(acc.api_token, acc.zone_id).catch(() => []),
-      getCatchAllRule(acc.api_token, acc.zone_id).catch(() => null),
+      getRoutingSettings(acc.auth, acc.zone_id).catch(() => null),
+      listRoutingRules(acc.auth, acc.zone_id).catch(() => []),
+      getCatchAllRule(acc.auth, acc.zone_id).catch(() => null),
     ]);
     return c.json(jsonOk({ settings, rules, catch_all: catchAll }));
   } catch (e) {
@@ -54,7 +54,7 @@ emailRoutes.post("/:id/email-routing/enable", async (c) => {
   const need = requirePerm(acc, "can_email");
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
-    const r = await enableRouting(acc.api_token, acc.zone_id);
+    const r = await enableRouting(acc.auth, acc.zone_id);
     await audit(c, "email.enable", acc.domain, acc.cf_account_id);
     return c.json(jsonOk(r));
   } catch (e) {
@@ -70,7 +70,7 @@ emailRoutes.post("/:id/email-routing/disable", async (c) => {
   const need = requirePerm(acc, "can_email");
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
-    const r = await disableRouting(acc.api_token, acc.zone_id);
+    const r = await disableRouting(acc.auth, acc.zone_id);
     await audit(c, "email.disable", acc.domain, acc.cf_account_id);
     return c.json(jsonOk(r));
   } catch (e) {
@@ -105,7 +105,7 @@ emailRoutes.post("/:id/email-routing/rules", async (c) => {
     priority: 0,
   };
   try {
-    const r = await createRoutingRule(acc.api_token, acc.zone_id, rule);
+    const r = await createRoutingRule(acc.auth, acc.zone_id, rule);
     await audit(
       c,
       "email.rule.create",
@@ -128,7 +128,7 @@ emailRoutes.put("/:id/email-routing/rules/:ruleId", async (c) => {
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   const body = await c.req.json().catch(() => ({}));
   try {
-    const r = await updateRoutingRule(acc.api_token, acc.zone_id, ruleId, body);
+    const r = await updateRoutingRule(acc.auth, acc.zone_id, ruleId, body);
     await audit(c, "email.rule.update", `${acc.domain}:${ruleId}`, acc.cf_account_id);
     return c.json(jsonOk(r));
   } catch (e) {
@@ -145,7 +145,7 @@ emailRoutes.delete("/:id/email-routing/rules/:ruleId", async (c) => {
   const need = requirePerm(acc, "can_email");
   if (need) return c.json(jsonErr(need.error), need.status as 403);
   try {
-    const r = await deleteRoutingRule(acc.api_token, acc.zone_id, ruleId);
+    const r = await deleteRoutingRule(acc.auth, acc.zone_id, ruleId);
     await audit(c, "email.rule.delete", `${acc.domain}:${ruleId}`, acc.cf_account_id);
     return c.json(jsonOk(r));
   } catch (e) {
@@ -176,7 +176,7 @@ emailRoutes.put("/:id/email-routing/catch-all", async (c) => {
       : [{ type: "drop" }],
   };
   try {
-    const r = await updateCatchAllRule(acc.api_token, acc.zone_id, payload);
+    const r = await updateCatchAllRule(acc.auth, acc.zone_id, payload);
     await audit(
       c,
       "email.catch_all.update",
