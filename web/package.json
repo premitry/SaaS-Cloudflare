@@ -2,29 +2,27 @@
   "name": "@cfp/web",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build",
-    "build:cf": "next-on-pages",
-    "start": "next start -p 3000",
-    "lint": "next lint",
+    "dev": "vite --port 5173",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5173",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "14.2.18",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "^1.13.7",
     "@types/node": "20.16.10",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
     "autoprefixer": "10.4.20",
-    "eslint": "8.57.1",
-    "eslint-config-next": "14.2.18",
     "postcss": "8.4.49",
     "tailwindcss": "3.4.15",
-    "typescript": "5.6.3"
+    "typescript": "5.6.3",
+    "vite": "5.4.11"
   }
 }

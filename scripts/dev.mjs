@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Run the worker and the Next.js web app in parallel with prefixed logs.
-// Usage:  npm run dev
+// Run the worker (Hono on :8787) and the Vite dev server (UI on :5173)
+// together with prefixed logs.
 //
-// Stops both on Ctrl+C.
+// In dev:
+//   - http://localhost:5173  -> hot-reloading dashboard, /api/* proxied to :8787
+//   - http://127.0.0.1:8787  -> worker, also serves the LAST built web/dist
+//
+// In prod (after `npm run deploy`):
+//   - https://cfp-worker.<sub>.workers.dev  -> single URL, both UI and API
 
 import { spawn } from "node:child_process";
 import { resolve, dirname } from "node:path";
@@ -31,9 +36,7 @@ function start(name, color, cmd, args, cwd) {
       buf += chunk.toString("utf8");
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
-      for (const line of lines) {
-        target.write(`${prefix} ${line}\n`);
-      }
+      for (const line of lines) target.write(`${prefix} ${line}\n`);
     });
   };
   pipe(child.stdout, process.stdout);
@@ -48,22 +51,22 @@ function start(name, color, cmd, args, cwd) {
 }
 
 const procs = [];
-
 function cleanup(code = 0) {
   for (const p of procs) {
     try {
       p.kill("SIGTERM");
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }
   process.exit(code);
 }
-
 process.on("SIGINT", () => cleanup(0));
 process.on("SIGTERM", () => cleanup(0));
 
-console.log(`${C.cyan}> Starting worker (8787) and web (3000)...${C.reset}`);
+console.log(
+  `${C.cyan}> Starting worker (8787) and vite (5173)...${C.reset}\n` +
+    `  Open ${C.cyan}http://localhost:5173${C.reset} for hot-reload UI dev,\n` +
+    `  or  ${C.cyan}http://127.0.0.1:8787${C.reset} to test the production-like single-URL setup.`
+);
 
 procs.push(
   start("worker", C.cyan, "npm", ["run", "dev"], resolve(root, "worker"))

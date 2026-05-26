@@ -2,7 +2,7 @@
   "name": "cf-domain-panel",
   "version": "0.1.0",
   "private": true,
-  "description": "Cloudflare Domain Management Panel - Multi account, multi user, permission-based SaaS dashboard",
+  "description": "Cloudflare Domain Management Panel - Multi account, multi user, permission-based SaaS dashboard. Deploys as a single Cloudflare Worker (UI + API).",
   "workspaces": [
     "worker",
     "web",
@@ -10,19 +10,16 @@
   ],
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "deploy:setup": "node scripts/deploy.mjs",
-    "deploy:web": "node scripts/deploy-web.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:worker": "npm --workspace worker run dev",
     "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace web run build",
     "build:web": "npm --workspace web run build",
-    "build:web:cf": "npm --workspace web run build:cf",
+    "deploy": "npm run build && npm --workspace worker run deploy",
+    "deploy:setup": "node scripts/deploy.mjs",
     "deploy:worker": "npm --workspace worker run deploy",
-    "deploy": "npm run deploy:setup && npm run deploy:web",
     "db:migrate:local": "npm --workspace worker run db:migrate:local",
     "db:migrate:remote": "npm --workspace worker run db:migrate:remote",
-    "db:seed:local": "npm --workspace worker run db:seed:local",
-    "db:seed:remote": "npm --workspace worker run db:seed:remote",
     "db:create": "npx --workspace worker wrangler d1 create cfp_db"
   },
   "engines": {

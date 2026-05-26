@@ -10,15 +10,14 @@ database_name = "cfp_db"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
-# Variables
+# Static dashboard. Built by `npm run build:web` -> ../web/dist
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+
 [vars]
-# CORS allowlist:
-#   "*"  - allow any origin (default for local dev so localhost & 127.0.0.1 both work)
-#   "https://your-frontend.com,https://other.com"  - pin to exact origins for production
-#
-# `npm run deploy:setup` will rewrite this with your real frontend URL.
 ALLOWED_ORIGINS = "*"
 
 # IMPORTANT: do NOT put JWT_SECRET here for production.
-# - Local dev: store it in worker/.dev.vars (created by `npm run setup`).
-# - Production: `npx wrangler secret put JWT_SECRET` (done by `npm run deploy:setup`).
+#   Local dev:    `worker/.dev.vars`  (auto-created by `npm run setup`)
+#   Production:   `npx wrangler secret put JWT_SECRET`
